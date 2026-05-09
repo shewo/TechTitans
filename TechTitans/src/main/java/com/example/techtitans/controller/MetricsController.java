@@ -4,6 +4,7 @@ import com.example.techtitans.Entity.Alert;
 import com.example.techtitans.Repository.AlertRepository;
 import com.example.techtitans.Repository.CheckHistoryRepository;
 import com.example.techtitans.Repository.ProxyRepository;
+import com.example.techtitans.Service.WebhookService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,8 +40,8 @@ public class MetricsController {
         metrics.put("active_alerts", activeAlerts);
         metrics.put("total_alerts", allAlerts.size());
 
-        // This is a placeholder. Member 4 will need to track real webhook deliveries later!
-        metrics.put("webhook_deliveries", 0);
+        // Track actual webhook deliveries
+        metrics.put("webhook_deliveries", WebhookService.getWebhookDeliveryCount());
 
         return ResponseEntity.ok(metrics);
     }

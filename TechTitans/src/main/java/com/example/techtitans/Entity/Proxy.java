@@ -35,4 +35,20 @@ public class Proxy {
 
     @Column(name = "is_deleted", nullable = false)
     private boolean isDeleted = false;
+
+    // Explicit getters for clarity
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+    
+    public String getUrl() { return url; }
+    public void setUrl(String url) { this.url = url; }
+    
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+    
+    public Instant getLastCheckedAt() { return lastCheckedAt; }
+    public void setLastCheckedAt(Instant lastCheckedAt) { this.lastCheckedAt = lastCheckedAt; }
+    
+    public int getConsecutiveFailures() { return consecutiveFailures; }
+    public void setConsecutiveFailures(int consecutiveFailures) { this.consecutiveFailures = consecutiveFailures; }
 }
