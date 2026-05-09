@@ -12,45 +12,32 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class ProxyMonitorService {
 
-    @Autowired
-    private AlertService alertService;
-
-    @Autowired
-    private ProxyRepository proxyRepository;
-
-    @Autowired
-    private CheckHistoryRepository historyRepository;
-
-    @Autowired
-    private NetworkProber networkProber;
-
-    // ADDED THIS: Connect to the config
-    @Autowired
-    private ConfigController configController;
+    @Autowired private AlertService alertService;
+    @Autowired private ProxyRepository proxyRepository;
+    @Autowired private CheckHistoryRepository historyRepository;
+    @Autowired private NetworkProber networkProber;
+    @Autowired private ConfigController configController;
 
     private Instant lastRun = Instant.MIN;
 
-    // Run every 1 second, but gate it dynamically
     @Scheduled(fixedDelay = 1000)
     public void runMonitoringCycle() {
         int intervalSeconds = configController.getCurrentConfig().getCheckIntervalSeconds();
         int timeoutMs = configController.getCurrentConfig().getRequestTimeoutMs();
 
-        // If the interval hasn't passed yet, skip this cycle
-        if (Instant.now().isBefore(lastRun.plusSeconds(intervalSeconds))) {
-            return;
-        }
+        if (Instant.now().isBefore(lastRun.plusSeconds(intervalSeconds))) return;
         lastRun = Instant.now();
 
         List<Proxy> proxies = proxyRepository.findAll();
-        List<CheckHistory> historyBatch = new ArrayList<>();
+        if (proxies.isEmpty()) return;
 
-        for (Proxy proxy : proxies) {
-            // Use the DYNAMIC timeout instead of hardcoded 3000!
+        // 🔥 FIRE IN PARALLEL! Checks 100 proxies instantly instead of one-by-one.
+        List<CheckHistory> finalHistoryBatch = proxies.parallelStream().map(proxy -> {
             String newStatus = networkProber.probe(proxy.getUrl(), timeoutMs);
 
             if ("down".equals(newStatus)) {
@@ -58,7 +45,6 @@ public class ProxyMonitorService {
             } else {
                 proxy.setConsecutiveFailures(0);
             }
-
             proxy.setStatus(newStatus);
             proxy.setLastCheckedAt(Instant.now());
 
@@ -66,11 +52,11 @@ public class ProxyMonitorService {
             history.setProxyId(proxy.getId());
             history.setStatus(newStatus);
             history.setCheckedAt(Instant.now());
-            historyBatch.add(history);
-        }
+            return history;
+        }).collect(Collectors.toList());
 
         proxyRepository.saveAll(proxies);
-        historyRepository.saveAll(historyBatch);
+        historyRepository.saveAll(finalHistoryBatch);
 
         alertService.evaluatePoolHealth();
     }
