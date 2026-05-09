@@ -11,19 +11,16 @@ import java.util.UUID;
 @RestController
 public class WebhookController {
 
-    // Temporary memory to hold registered webhooks.
-    // Member 4 will use these URLs later to send the actual alerts.
     private final Map<String, String> registeredWebhooks = new HashMap<>();
 
-    // ==========================================
-    // CHAPTER 10: The Messenger
-    // POST /webhooks
-    // ==========================================
+    // ADDED THIS GETTER:
+    public Map<String, String> getRegisteredWebhooks() {
+        return registeredWebhooks;
+    }
+
     @PostMapping("/webhooks")
     public ResponseEntity<Map<String, String>> registerWebhook(@RequestBody Map<String, String> request) {
         String url = request.get("url");
-
-        // Generate a random ID like "wh-123"
         String webhookId = "wh-" + UUID.randomUUID().toString().substring(0, 6);
         registeredWebhooks.put(webhookId, url);
 
@@ -34,14 +31,8 @@ public class WebhookController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    // ==========================================
-    // CHAPTER 11: The Integration Layer
-    // POST /integrations
-    // ==========================================
     @PostMapping("/integrations")
     public ResponseEntity<Map<String, Object>> registerIntegration(@RequestBody Map<String, Object> request) {
-        // Torch Labs just wants us to accept the Slack/Discord configuration payload.
-        // We return 201 Created and echo the payload back.
         return ResponseEntity.status(HttpStatus.CREATED).body(request);
     }
 }

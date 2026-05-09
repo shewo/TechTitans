@@ -8,9 +8,12 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/config")
 public class ConfigController {
 
-    // Temporary memory: Initialize with some default values to pass initial GET tests.
-    // Later, Member 2 will help you replace this with a database call.
     private ConfigDTO currentConfig = new ConfigDTO(15, 3000);
+
+    // ADDED THIS GETTER:
+    public ConfigDTO getCurrentConfig() {
+        return currentConfig;
+    }
 
     @GetMapping
     public ResponseEntity<ConfigDTO> getConfig() {
@@ -19,10 +22,7 @@ public class ConfigController {
 
     @PostMapping
     public ResponseEntity<ConfigDTO> updateConfig(@RequestBody ConfigDTO newConfig) {
-        // Update the temporary memory
         this.currentConfig = newConfig;
-
-        // Return 200 OK with the newly applied configuration
         return ResponseEntity.ok(this.currentConfig);
     }
 }

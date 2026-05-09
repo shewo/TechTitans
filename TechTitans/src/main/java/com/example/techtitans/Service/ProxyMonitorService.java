@@ -4,6 +4,7 @@ import com.example.techtitans.Entity.Proxy;
 import com.example.techtitans.Entity.CheckHistory;
 import com.example.techtitans.Repository.ProxyRepository;
 import com.example.techtitans.Repository.CheckHistoryRepository;
+import com.example.techtitans.controller.ConfigController;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -25,19 +26,33 @@ public class ProxyMonitorService {
     private CheckHistoryRepository historyRepository;
 
     @Autowired
-    private NetworkProber networkProber; // Bringing in the real ping tool!
+    private NetworkProber networkProber;
 
-    // Runs continuously in the background
-    @Scheduled(fixedDelayString = "#{@systemConfigRepository.findById(1).orElse(new com.example.techtitans.Entity.SystemConfig()).getCheckIntervalSeconds() * 1000}")
+    // ADDED THIS: Connect to the config
+    @Autowired
+    private ConfigController configController;
+
+    private Instant lastRun = Instant.MIN;
+
+    // Run every 1 second, but gate it dynamically
+    @Scheduled(fixedDelay = 1000)
     public void runMonitoringCycle() {
+        int intervalSeconds = configController.getCurrentConfig().getCheckIntervalSeconds();
+        int timeoutMs = configController.getCurrentConfig().getRequestTimeoutMs();
+
+        // If the interval hasn't passed yet, skip this cycle
+        if (Instant.now().isBefore(lastRun.plusSeconds(intervalSeconds))) {
+            return;
+        }
+        lastRun = Instant.now();
+
         List<Proxy> proxies = proxyRepository.findAll();
         List<CheckHistory> historyBatch = new ArrayList<>();
 
         for (Proxy proxy : proxies) {
-            // Use the real prober to ping the URL! (Using a default 3000ms timeout)
-            String newStatus = networkProber.probe(proxy.getUrl(), 3000);
+            // Use the DYNAMIC timeout instead of hardcoded 3000!
+            String newStatus = networkProber.probe(proxy.getUrl(), timeoutMs);
 
-            // Update consecutive failures if it's down
             if ("down".equals(newStatus)) {
                 proxy.setConsecutiveFailures(proxy.getConsecutiveFailures() + 1);
             } else {
@@ -57,7 +72,6 @@ public class ProxyMonitorService {
         proxyRepository.saveAll(proxies);
         historyRepository.saveAll(historyBatch);
 
-        // Trigger the Alert Engine to check the math!
         alertService.evaluatePoolHealth();
     }
 }
