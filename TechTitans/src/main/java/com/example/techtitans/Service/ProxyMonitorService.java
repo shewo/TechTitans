@@ -16,24 +16,38 @@ import java.util.List;
 public class ProxyMonitorService {
 
     @Autowired
+    private AlertService alertService;
+
+    @Autowired
     private ProxyRepository proxyRepository;
 
     @Autowired
     private CheckHistoryRepository historyRepository;
 
-    @Scheduled(fixedDelay = 15000)
+    @Autowired
+    private NetworkProber networkProber; // Bringing in the real ping tool!
+
+    // Runs continuously in the background
+    @Scheduled(fixedDelayString = "#{@systemConfigRepository.findById(1).orElse(new com.example.techtitans.Entity.SystemConfig()).getCheckIntervalSeconds() * 1000}")
     public void runMonitoringCycle() {
         List<Proxy> proxies = proxyRepository.findAll();
         List<CheckHistory> historyBatch = new ArrayList<>();
 
         for (Proxy proxy : proxies) {
-            String newStatus = "up"; // Placeholder for Member 3's logic
+            // Use the real prober to ping the URL! (Using a default 3000ms timeout)
+            String newStatus = networkProber.probe(proxy.getUrl(), 3000);
+
+            // Update consecutive failures if it's down
+            if ("down".equals(newStatus)) {
+                proxy.setConsecutiveFailures(proxy.getConsecutiveFailures() + 1);
+            } else {
+                proxy.setConsecutiveFailures(0);
+            }
 
             proxy.setStatus(newStatus);
             proxy.setLastCheckedAt(Instant.now());
 
             CheckHistory history = new CheckHistory();
-            // Match this to your Proxy entity's ID method (getId or getProxyId)
             history.setProxyId(proxy.getId());
             history.setStatus(newStatus);
             history.setCheckedAt(Instant.now());
@@ -42,5 +56,8 @@ public class ProxyMonitorService {
 
         proxyRepository.saveAll(proxies);
         historyRepository.saveAll(historyBatch);
+
+        // Trigger the Alert Engine to check the math!
+        alertService.evaluatePoolHealth();
     }
 }
