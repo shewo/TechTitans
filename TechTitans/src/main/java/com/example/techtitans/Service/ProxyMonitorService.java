@@ -25,21 +25,27 @@ public class ProxyMonitorService {
 
     private Instant lastRun = Instant.MIN;
 
-    @Scheduled(fixedDelay = 1000)
+    // Run frequently (every 500ms) to respect config changes immediately
+    @Scheduled(fixedDelay = 500)
     public void runMonitoringCycle() {
+        // Read config fresh each cycle - respects immediate changes
         int intervalSeconds = configController.getCurrentConfig().getCheckIntervalSeconds();
         int timeoutMs = configController.getCurrentConfig().getRequestTimeoutMs();
 
-        if (Instant.now().isBefore(lastRun.plusSeconds(intervalSeconds))) return;
+        // Check if enough time has passed since last run
+        if (Instant.now().isBefore(lastRun.plusSeconds(intervalSeconds))) {
+            return;
+        }
         lastRun = Instant.now();
 
         List<Proxy> proxies = proxyRepository.findAll();
         if (proxies.isEmpty()) return;
 
-        // 🔥 FIRE IN PARALLEL! Checks 100 proxies instantly instead of one-by-one.
+        // Check all proxies in parallel for speed
         List<CheckHistory> finalHistoryBatch = proxies.parallelStream().map(proxy -> {
             String newStatus = networkProber.probe(proxy.getUrl(), timeoutMs);
 
+            // Update consecutive failures tracking
             if ("down".equals(newStatus)) {
                 proxy.setConsecutiveFailures(proxy.getConsecutiveFailures() + 1);
             } else {
@@ -58,6 +64,7 @@ public class ProxyMonitorService {
         proxyRepository.saveAll(proxies);
         historyRepository.saveAll(finalHistoryBatch);
 
+        // Evaluate alerts after each cycle
         alertService.evaluatePoolHealth();
     }
 }
