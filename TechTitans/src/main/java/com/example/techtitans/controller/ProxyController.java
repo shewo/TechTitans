@@ -2,13 +2,16 @@ package com.example.techtitans.controller;
 
 import com.example.techtitans.Entity.Proxy;
 import com.example.techtitans.Repository.ProxyRepository;
+import com.example.techtitans.Service.ProxyService;
+import com.example.techtitans.dto.ProxyCreateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 
 @RestController
 @RequestMapping("/proxies")
@@ -17,39 +20,48 @@ public class ProxyController {
     @Autowired
     private ProxyRepository proxyRepository;
 
-    // 1. add proxy (Chapter 04: Building the Pool)
-    // sent touch labs from proxy
+    @Autowired
+    private ProxyService proxyService; // Connecting to Member 2's logic!
+
+    // Chapter 04: Building the Pool
     @PostMapping
-    public ResponseEntity<?> addProxy(@RequestBody Proxy proxy) {
-        // new = pending
-        proxy.setStatus("pending");
-        proxy.setConsecutiveFailures(0);
+    public ResponseEntity<Map<String, Object>> ingestProxies(@RequestBody ProxyCreateRequest request) {
 
-        Proxy savedProxy = proxyRepository.save(proxy);
-        return ResponseEntity.ok(savedProxy);
+        // 1. Pass the incoming JSON to the Service your teammate built
+        List<Proxy> savedProxies = proxyService.loadProxies(request);
+
+        // 2. Format the response to exactly match Chapter 4 of the PDF
+        Map<String, Object> response = new HashMap<>();
+        response.put("accepted", savedProxies.size());
+        response.put("proxies", savedProxies);
+
+        // 3. Return a 201 Created status (Required by the rules!)
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    // 2. check proxies states (Chapter 05: The Watchtower)
-    //Background Engine update Status
+    // Chapter 05: The Watchtower
     @GetMapping
-    public ResponseEntity<List<Proxy>> getAllProxies() {
-        List<Proxy> proxies = proxyRepository.findAll();
-        return ResponseEntity.ok(proxies);
-    }
+    public ResponseEntity<Map<String, Object>> getWatchtower() {
 
-    // 3. Pool (Optional - For debugging)
-    @GetMapping("/summary")
-    public ResponseEntity<?> getPoolSummary() {
-        List<Proxy> all = proxyRepository.findAll();
-        long upCount = all.stream().filter(p -> p.getStatus().equals("up")).count();
-        long downCount = all.stream().filter(p -> p.getStatus().equals("down")).count();
+        // 1. Fetch all proxies from the database
+        List<Proxy> allProxies = proxyRepository.findAll();
 
-        Map<String, Object> summary = new HashMap<>();
-        summary.put("total_proxies", all.size());
-        summary.put("up", upCount);
-        summary.put("down", downCount);
-        summary.put("failure_rate", all.isEmpty() ? 0 : (double) downCount / all.size());
+        // 2. Calculate the stats
+        long upCount = allProxies.stream().filter(p -> "up".equals(p.getStatus())).count();
+        long downCount = allProxies.stream().filter(p -> "down".equals(p.getStatus())).count();
+        double failureRate = allProxies.isEmpty() ? 0.0 : (double) downCount / allProxies.size();
 
-        return ResponseEntity.ok(summary);
+        // 3. Format the Watchtower response exactly as requested in Chapter 5
+        Map<String, Object> response = new HashMap<>();
+        response.put("total", allProxies.size());
+        response.put("up", upCount);
+        response.put("down", downCount);
+
+        // Note: Because you set snake_case in application.properties,
+        // "failureRate" will automatically turn into "failure_rate" in the JSON output!
+        response.put("failureRate", failureRate);
+        response.put("proxies", allProxies);
+
+        return ResponseEntity.ok(response);
     }
 }
