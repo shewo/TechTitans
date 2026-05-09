@@ -9,6 +9,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.example.techtitans.Entity.CheckHistory;
+import java.util.ArrayList;
+import java.util.Optional;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +19,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/proxies")
 public class ProxyController {
+
+    @Autowired
+    private com.example.techtitans.Repository.CheckHistoryRepository historyRepository;
 
     @Autowired
     private ProxyRepository proxyRepository;
@@ -63,5 +69,89 @@ public class ProxyController {
         response.put("proxies", allProxies);
 
         return ResponseEntity.ok(response);
+    }
+
+    // ==========================================
+    // CHAPTER 06: The Dossier
+    // GET /proxies/{id}
+    // ==========================================
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getProxyDossier(@PathVariable String id) {
+        // 1. Check if the proxy exists. If not, return 404 Not Found per the rules.
+        Optional<Proxy> proxyOpt = proxyRepository.findById(id);
+        if (proxyOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Proxy proxy = proxyOpt.get();
+
+        // 2. Fetch the background check history for this specific proxy
+        List<CheckHistory> history = historyRepository.findByProxyIdOrderByCheckedAtAsc(id);
+
+        // 3. Calculate uptime stats
+        long totalChecks = history.size();
+        long upChecks = history.stream().filter(h -> "up".equals(h.getStatus())).count();
+        double uptimePercentage = totalChecks == 0 ? 0.0 : ((double) upChecks / totalChecks) * 100.0;
+
+        // 4. Format the history array
+        List<Map<String, Object>> historyResponse = new ArrayList<>();
+        for (CheckHistory h : history) {
+            Map<String, Object> hMap = new HashMap<>();
+            hMap.put("checked_at", h.getCheckedAt());
+            hMap.put("status", h.getStatus());
+            historyResponse.add(hMap);
+        }
+
+        // 5. Build the final JSON matching the PDF exactly
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", proxy.getId());
+        response.put("url", proxy.getUrl());
+        response.put("status", proxy.getStatus());
+        response.put("last_checked_at", proxy.getLastCheckedAt());
+        response.put("consecutive_failures", proxy.getConsecutiveFailures());
+        response.put("total_checks", totalChecks);
+        response.put("uptime_percentage", Math.round(uptimePercentage * 10.0) / 10.0); // Round to 1 decimal place
+        response.put("history", historyResponse);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ==========================================
+    // CHAPTER 07: The Chronicle
+    // GET /proxies/{id}/history
+    // ==========================================
+    @GetMapping("/{id}/history")
+    public ResponseEntity<List<Map<String, Object>>> getProxyHistory(@PathVariable String id) {
+        // Return 404 if the ID is totally unknown
+        if (!proxyRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        List<CheckHistory> history = historyRepository.findByProxyIdOrderByCheckedAtAsc(id);
+        List<Map<String, Object>> historyResponse = new ArrayList<>();
+
+        for (CheckHistory h : history) {
+            Map<String, Object> hMap = new HashMap<>();
+            hMap.put("checked_at", h.getCheckedAt());
+            hMap.put("status", h.getStatus());
+            historyResponse.add(hMap);
+        }
+
+        return ResponseEntity.ok(historyResponse);
+    }
+
+    // ==========================================
+    // CHAPTER 08: The Graveyard
+    // DELETE /proxies
+    // ==========================================
+    @DeleteMapping
+    public ResponseEntity<Void> clearPool() {
+        // Because Member 2 added @SQLDelete(sql = "UPDATE proxies SET is_deleted = true...")
+        // to the Proxy entity, this will safely hide the proxies from the pool
+        // without accidentally wiping out the alerts or history!
+        proxyRepository.deleteAll();
+
+        // Return 204 No Content per the rules
+        return ResponseEntity.noContent().build();
     }
 }
