@@ -6,12 +6,11 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
-
 import java.time.Instant;
 
 @Entity
 @Table(name = "proxies")
-@Data // This generates getId, setId, etc. automatically
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 @SQLDelete(sql = "UPDATE proxies SET is_deleted = true WHERE id=?")
@@ -19,7 +18,7 @@ import java.time.Instant;
 public class Proxy {
 
     @Id
-    private String id; // This must be "id" for getId() to work
+    private String id;
 
     @Column(nullable = false)
     private String url;
