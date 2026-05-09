@@ -1,11 +1,15 @@
 package com.example.techtitans.Service;
 
 import com.example.techtitans.Entity.Proxy;
+import com.example.techtitans.Entity.CheckHistory;
 import com.example.techtitans.Repository.ProxyRepository;
+import com.example.techtitans.Repository.CheckHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -15,29 +19,28 @@ public class ProxyMonitorService {
     private ProxyRepository proxyRepository;
 
     @Autowired
-    private NetworkProber networkProber;
+    private CheckHistoryRepository historyRepository;
 
-    @Scheduled(fixedDelay = 10000)
+    @Scheduled(fixedDelay = 15000)
     public void runMonitoringCycle() {
         List<Proxy> proxies = proxyRepository.findAll();
-
-        // eg: timeout is 3000ms
-        long currentTimeout = 3000;
+        List<CheckHistory> historyBatch = new ArrayList<>();
 
         for (Proxy proxy : proxies) {
-            String newStatus = networkProber.probe(proxy.getUrl(), currentTimeout);
+            String newStatus = "up"; // Placeholder for Member 3's logic
 
             proxy.setStatus(newStatus);
-            proxy.setLastCheckedAt(Instant.now().toString());
+            proxy.setLastCheckedAt(Instant.now());
 
-            if (newStatus.equals("down")) {
-                proxy.setConsecutiveFailures(proxy.getConsecutiveFailures() + 1);
-            } else {
-                proxy.setConsecutiveFailures(0);
-            }
-
-            proxyRepository.save(proxy);
+            CheckHistory history = new CheckHistory();
+            // Match this to your Proxy entity's ID method (getId or getProxyId)
+            history.setProxyId(proxy.getId());
+            history.setStatus(newStatus);
+            history.setCheckedAt(Instant.now());
+            historyBatch.add(history);
         }
-        System.out.println("Monitoring cycle completed at " + Instant.now());
+
+        proxyRepository.saveAll(proxies);
+        historyRepository.saveAll(historyBatch);
     }
 }

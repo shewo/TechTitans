@@ -6,5 +6,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProxyRepository extends JpaRepository<Proxy, String> {
-    //  "Proxy" means your Entity class, "String" means Primary Key (proxyId) type
+
+    // You literally don't need to write anything inside here!
+    // Spring gives you save(), findAll(), findById(), and deleteById() for free.
+    // And because of your Soft Delete entity, deleted proxies stay hidden automatically.
+
 }
