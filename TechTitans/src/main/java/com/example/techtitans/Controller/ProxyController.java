@@ -1,4 +1,4 @@
 package com.example.techtitans.Controller;
 
-public class UserController {
+public class ProxyController {
 }

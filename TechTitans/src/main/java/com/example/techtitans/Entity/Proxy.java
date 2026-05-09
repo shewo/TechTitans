@@ -1,4 +1,4 @@
 package com.example.techtitans.Entity;
 
-public class User {
+public class Proxy {
 }
