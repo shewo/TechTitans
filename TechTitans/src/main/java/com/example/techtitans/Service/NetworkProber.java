@@ -6,33 +6,31 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 @Component
 public class NetworkProber {
 
-    public String probe(String url, long timeoutMs) {
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(timeoutMs))
-                    .build();
+    // Reuse a single client to prevent socket exhaustion
+    private final HttpClient client = HttpClient.newBuilder().build();
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofMillis(timeoutMs))
-                    .GET()
-                    .build();
+    public CompletableFuture<String> probeAsync(String url, long timeoutMs) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofMillis(timeoutMs))
+                .GET()
+                .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            // Rule: 2xx means UP, 5xx or others often mean DOWN
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return "up";
-            } else {
-                return "down";
-            }
-        } catch (Exception e) {
-            // Timeout or Connection error when DOWN
-            return "down";
-        }
+        return client.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .thenApply(response -> {
+                    int code = response.statusCode();
+                    // 2xx is UP, everything else (3xx, 4xx, 5xx) is DOWN
+                    if (code >= 200 && code < 300) {
+                        return "up";
+                    } else {
+                        return "down";
+                    }
+                })
+                .exceptionally(e -> "down"); // Timeouts and connection errors go here
     }
 }

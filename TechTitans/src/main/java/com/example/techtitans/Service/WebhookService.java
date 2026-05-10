@@ -11,6 +11,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
@@ -21,17 +24,17 @@ public class WebhookService {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
-    
-    // Track total successful webhook deliveries
     private static final AtomicInteger webhookDeliveryCount = new AtomicInteger(0);
 
-    public static int getWebhookDeliveryCount() {
-        return webhookDeliveryCount.get();
+    // Thread pool mapped per URL to guarantee sequential order for each receiver
+    private final Map<String, ExecutorService> dispatchers = new ConcurrentHashMap<>();
+
+    private ExecutorService getDispatcher(String url) {
+        return dispatchers.computeIfAbsent(url, k -> Executors.newSingleThreadExecutor());
     }
 
-    public static void incrementWebhookDeliveryCount() {
-        webhookDeliveryCount.incrementAndGet();
-    }
+    public static int getWebhookDeliveryCount() { return webhookDeliveryCount.get(); }
+    public static void incrementWebhookDeliveryCount() { webhookDeliveryCount.incrementAndGet(); }
 
     public void sendAlertFired(Alert alert) {
         Map<String, Object> payload = new HashMap<>();
@@ -45,10 +48,7 @@ public class WebhookService {
         payload.put("threshold", alert.getThreshold());
         payload.put("message", alert.getMessage());
 
-        // Dispatch to regular webhooks (blocking to maintain order)
         dispatchToAllWebhooks(payload);
-        
-        // Dispatch to integrations (Slack/Discord)
         dispatchToIntegrations(alert, "alert.fired");
     }
 
@@ -58,10 +58,7 @@ public class WebhookService {
         payload.put("alert_id", alert.getAlertId());
         payload.put("resolved_at", alert.getResolvedAt().toString());
 
-        // Dispatch to regular webhooks (blocking to maintain order)
         dispatchToAllWebhooks(payload);
-        
-        // Dispatch to integrations (Slack/Discord)
         dispatchToIntegrations(alert, "alert.resolved");
     }
 
@@ -71,50 +68,36 @@ public class WebhookService {
             Map<String, String> webhooks = webhookController.getRegisteredWebhooks();
 
             for (String url : webhooks.values()) {
-                // Block here to ensure order - don't use CompletableFuture
-                sendWithRetry(url, json);
+                getDispatcher(url).submit(() -> sendWithRetry(url, json));
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void dispatchToIntegrations(Alert alert, String eventType) {
         try {
             Map<String, Map<String, Object>> integrations = webhookController.getRegisteredIntegrations();
-            
+
             for (Map<String, Object> integration : integrations.values()) {
                 String type = (String) integration.get("type");
                 String webhookUrl = (String) integration.get("webhook_url");
+                @SuppressWarnings("unchecked")
                 List<String> events = (List<String>) integration.get("events");
-                
-                if (events == null || !events.contains(eventType)) {
-                    continue;
-                }
-                
+
+                if (events == null || !events.contains(eventType)) continue;
+
                 Map<String, Object> payload = null;
                 if ("slack".equals(type)) {
-                    if ("alert.fired".equals(eventType)) {
-                        payload = SlackFormatter.formatAlertFired(alert);
-                    } else {
-                        payload = SlackFormatter.formatAlertResolved(alert);
-                    }
+                    payload = "alert.fired".equals(eventType) ? SlackFormatter.formatAlertFired(alert) : SlackFormatter.formatAlertResolved(alert);
                 } else if ("discord".equals(type)) {
-                    if ("alert.fired".equals(eventType)) {
-                        payload = DiscordFormatter.formatAlertFired(alert);
-                    } else {
-                        payload = DiscordFormatter.formatAlertResolved(alert);
-                    }
+                    payload = "alert.fired".equals(eventType) ? DiscordFormatter.formatAlertFired(alert) : DiscordFormatter.formatAlertResolved(alert);
                 }
-                
+
                 if (payload != null) {
                     String json = objectMapper.writeValueAsString(payload);
-                    sendWithRetry(webhookUrl, json);
+                    getDispatcher(webhookUrl).submit(() -> sendWithRetry(webhookUrl, json));
                 }
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void sendWithRetry(String url, String jsonBody) {
@@ -125,25 +108,25 @@ public class WebhookService {
                 .build();
 
         boolean success = false;
-        int retries = 0;
-        while (!success && retries < 60) { // Max 60 seconds of retries
+        long startTime = System.currentTimeMillis();
+
+        // Loop for up to 60 seconds
+        while (!success && (System.currentTimeMillis() - startTime) < 60000) {
             try {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 int status = response.statusCode();
-                // Rule: Retry on 500, 502, 503, 504. Otherwise, consider it complete.
+                // Transient errors trigger a retry
                 if (status == 500 || status == 502 || status == 503 || status == 504) {
                     Thread.sleep(1000);
-                    retries++;
                 } else {
                     success = true;
-                    // Increment delivery count on any successful HTTP response
-                    incrementWebhookDeliveryCount();
+                    // Only count true success (2xx) for metrics
+                    if (status >= 200 && status < 300) {
+                        incrementWebhookDeliveryCount();
+                    }
                 }
             } catch (Exception e) {
-                try { 
-                    Thread.sleep(1000); 
-                    retries++;
-                } catch (InterruptedException ignored) {}
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             }
         }
     }

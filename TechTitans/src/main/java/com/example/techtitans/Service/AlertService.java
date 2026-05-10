@@ -48,7 +48,7 @@ public class AlertService {
                 Alert newAlert = new Alert();
                 newAlert.setAlertId("alert-" + UUID.randomUUID().toString().substring(0, 8));
                 newAlert.setStatus("active");
-                newAlert.setFailureRate(Math.round(failureRate * 100.0) / 100.0);
+                newAlert.setFailureRate(failureRate);
                 newAlert.setTotalProxies(allProxies.size());
                 newAlert.setFailedProxies(downProxies.size());
                 newAlert.setFailedProxyIds(failedProxyIds);
@@ -62,7 +62,7 @@ public class AlertService {
                 webhookService.sendAlertFired(newAlert);
             } else {
                 // Active alert exists - update it with fresh data
-                activeAlert.setFailureRate(Math.round(failureRate * 100.0) / 100.0);
+                activeAlert.setFailureRate(failureRate);
                 activeAlert.setFailedProxies(downProxies.size());
                 activeAlert.setFailedProxyIds(failedProxyIds);
                 alertRepository.save(activeAlert);
